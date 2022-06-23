@@ -1,7 +1,8 @@
 use std::borrow::Borrow;
 use std::error::Error;
 
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use bytes::{BufMut, Bytes, BytesMut};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 //'CONNECT www.google.com:443 HTTP/1.1'
@@ -13,28 +14,29 @@ use tokio::net::{TcpListener, TcpStream};
 async fn main() -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind("0.0.0.0:10000").await?;
     loop {
-        let (socket, _) = listener.accept().await?;
+        let (mut socket, _) = listener.accept().await?;
         tokio::spawn(async move {
-            let (in_reader, mut in_writer) = tokio::io::split(socket);
-            let mut line = String::new();
-            let mut in_reader_buf = BufReader::new(in_reader);
-            let _ = in_reader_buf.read_line(&mut line);
-            println!("{}", line);
-            let split: Vec<&str> = line.split(" ").collect();
-            if split[0] == "CONNECT" {
-                let url = split[1];
-                let (mut out_reader, mut out_writer) =
-                    tokio::io::split(TcpStream::connect(url).await.unwrap());
-                let msg = format!("{} 200 Connection Established\r\n\r\n", split[2]);
-                println!("{}", msg);
-                let _ = in_writer.write_all(msg.as_bytes()).await;
-                tokio::io::copy(&mut in_reader_buf, &mut out_writer)
-                    .await
-                    .unwrap();
-                tokio::io::copy(&mut out_reader, &mut in_writer)
-                    .await
-                    .unwrap();
+            let mut byte_buf = BytesMut::with_capacity(4096);
+            loop {
+                let mut byte_tmp = [0u8; 1024];
+                match socket.read(&mut byte_tmp).await {
+                    Ok(n) => {
+                        byte_buf.put_slice(&byte_tmp[..n]);
+                        let byte_buf_ref = byte_buf.as_ref();
+                        //结束
+                        if &byte_buf_ref[byte_buf_ref.len() - 4..] == b"\r\n\r\n" {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("读取数据出错:{}", e);
+                        return;
+                    }
+                };
             }
+            let header = String::from_utf8(byte_buf.to_vec()).unwrap();
+            let rows: Vec<_> = header.split("\r\n").collect();
+            let url = rows[0].split(" ")[1];
         });
     }
 }
