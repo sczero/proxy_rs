@@ -157,16 +157,16 @@ async fn handle_inbound(
 
     if inbound_header.method == "CONNECT" {
         let outbound_stream = TcpStream::connect(inbound_header.url).await?;
-        inbound_writer
-            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
-            .await?;
         let (mut outbound_reader, mut outbound_writer) = outbound_stream.into_split();
-        tokio::spawn(
-            async move { tokio::io::copy(&mut outbound_reader, &mut inbound_writer).await },
-        );
         tokio::spawn(async move {
             let _ = tokio::io::copy(&mut inbound_reader, &mut outbound_writer).await;
         });
+        inbound_writer
+            .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            .await?;
+        tokio::spawn(
+            async move { tokio::io::copy(&mut outbound_reader, &mut inbound_writer).await },
+        );
     } else {
         let mut request = outbound_http_client.request(
             Method::from_str(&inbound_header.method)?,
