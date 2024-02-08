@@ -1,0 +1,8 @@
+{
+  "bind_addr": "127.0.0.1:8888",
+  "username": "test",
+  "password": "test",
+  "tls_enable": false,
+  "tls_cert": "",
+  "tls_key": ""
+}
